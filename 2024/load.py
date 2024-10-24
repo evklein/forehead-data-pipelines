@@ -45,7 +45,7 @@ og_strokes['distance'] = og_strokes.apply(
 )
 
 og_course_holes['center_green_point'] = og_course_holes['center_green_point'].apply(parse_coordinates_with_parentheses)
-og_strokes = pd.merge(og_strokes, og_course_holes[['id' 'center_green_point']], left_on='hole_id', right_on='id', how='left')
+og_strokes = pd.merge(og_strokes, og_course_holes[['id', 'center_green_point']], left_on='hole_id', right_on='id', how='left')
 # Now calculate the distance from start_coordinate to center_green_point (the green center)
 og_strokes['distance_start_to_green_center'] = og_strokes.apply(
     lambda row: 0 if row['start_coordinate'] is None or row['center_green_point'] is None
@@ -61,19 +61,39 @@ print(og_strokes.columns)
 og_strokes.drop(columns=['id_y'], inplace=True)
 
 strokes_per_round = og_strokes.groupby('rnd_id').size().reset_index(name='num_strokes')
-putts_per_round = og_putts.groupby('rnd_id').size().reset_index(name='num_putts')
-penalties_per_round = og_strokes.where(og_strokes['penalty'] == True).groupby('rnd_id').size().reset_index(name='num_penalties')
-gir_per_round = og_round_stats.where(og_round_stats['gir'] == True).groupby('rnd_id').size().reset_index(name='num_gir')
-gld_per_round = og_round_stats.where(og_round_stats['gld'] == True).groupby('rnd_id').size().reset_index(name='num_gld')
-shots_inside_110 = og_strokes.where(og_strokes['distance_start_to_green_center'] <= 110.0).groupby('rnd_id').size().reset_index(name='num_110')
+putts_per_round = og_putts.groupby('rnd_id').size().reset_index(name='# Putts')
+score_df = pd.merge(strokes_per_round, putts_per_round, on='rnd_id', how='outer')
+score_df['Score'] = score_df['num_strokes'].fillna(0) + score_df['# Putts'].fillna(0)
+
+penalties_per_round = og_strokes.where(og_strokes['penalty'] == True).groupby('rnd_id').size().reset_index(name='# Penalties')
+gir_per_round = (
+    og_round_stats.where(og_round_stats['gir'] == True)
+    .groupby('rnd_id')
+    .size()
+)
+
+# Calculate percentage and handle cases where the count is 0
+gir_per_round = (gir_per_round / 18 * 100).reset_index(name='GIR')
+
+# Replace NaN values with 0 and round to one decimal place
+gir_per_round['GIR'] = gir_per_round['GIR'].fillna(0).round(1).astype(str) + '%'
+gld_per_round = og_round_stats.where(og_round_stats['gld'] == True).groupby('rnd_id').size().reset_index(name='Green Light Drives')
+shots_inside_100 = og_strokes.where(og_strokes['distance_start_to_green_center'] < 100.0).groupby('rnd_id').size().reset_index(name='# Shots < 100 Yards')
+shots_between_200_and_100 = og_strokes.where(
+    (og_strokes['distance_start_to_green_center'] >= 100.0) & 
+    (og_strokes['distance_start_to_green_center'] < 200.0)
+).groupby('rnd_id').size().reset_index(name='# Shots 100-200 Yards')
+
+num_drivers_hit = og_strokes.where(og_strokes['club'] == 'D').groupby('rnd_id').size().reset_index(name='# Drivers Hit')
 drives = og_strokes[og_strokes['club'] == 'D']
-avg_drive_distance_per_round = drives.groupby('rnd_id')['distance'].mean().reset_index(name='avg_drive_distance')
+avg_drive_distance_per_round = drives.groupby('rnd_id')['distance'].mean().reset_index(name='Avg. Driver Distance')
 
 # Merge this with the og_rounds DataFrame to include round details
+
 new_rounds = pd.merge(og_rounds, strokes_per_round, left_on='id', right_on='rnd_id', how='left')
 new_rounds.drop(columns='rnd_id', inplace=True)  # Drop 'rnd_id' to avoid duplication
 
-new_rounds = pd.merge(new_rounds, putts_per_round, left_on='id', right_on='rnd_id', how='left')
+new_rounds = pd.merge(new_rounds, score_df, left_on='id', right_on='rnd_id', how='left')
 new_rounds.drop(columns='rnd_id', inplace=True)  # Drop 'rnd_id' to avoid duplication
 
 new_rounds = pd.merge(new_rounds, penalties_per_round, left_on='id', right_on='rnd_id', how='left')
@@ -85,27 +105,32 @@ new_rounds.drop(columns='rnd_id', inplace=True)  # Drop 'rnd_id' to avoid duplic
 new_rounds = pd.merge(new_rounds, gld_per_round, left_on='id', right_on='rnd_id', how='left')
 new_rounds.drop(columns='rnd_id', inplace=True)  # Drop 'rnd_id' to avoid duplication
 
-new_rounds = pd.merge(new_rounds, shots_inside_110, left_on='id', right_on='rnd_id', how='left')
+new_rounds = pd.merge(new_rounds, shots_inside_100, left_on='id', right_on='rnd_id', how='left')
 new_rounds.drop(columns='rnd_id', inplace=True)  # Drop 'rnd_id' to avoid duplication
+
+new_rounds = pd.merge(new_rounds, shots_between_200_and_100, left_on='id', right_on='rnd_id', how='left')
+new_rounds.drop(columns='rnd_id', inplace=True)  # Drop 'rnd_id' to avoid duplication
+
+new_rounds = pd.merge(new_rounds, num_drivers_hit, left_on='id', right_on='rnd_id', how='left')
+new_rounds.drop(columns='rnd_id', inplace=True)  # Drop 'rnd_id' to avoid duplication
+
+
 
 new_rounds = pd.merge(new_rounds, avg_drive_distance_per_round, left_on='id', right_on='rnd_id', how='left')
 new_rounds.drop(columns='rnd_id', inplace=True)  # Drop 'rnd_id' to avoid duplication
-# new_rounds.drop(columns='rnd_id', inplace=True)  # Drop 'rnd_id' to avoid duplication
 
 new_rounds = pd.merge(new_rounds, og_courses, left_on='course_id', right_on='id', how='left')
-new_rounds.drop(columns='course_id', inplace=True)
+# new_rounds.drop(columns='rnd_id', inplace=True)  # Drop 'rnd_id' to avoid duplication
+
+new_rounds = new_rounds.where(new_rounds['Score'] > 80)
 
 
 # Fill NaN values with 0 if some rounds don't have any putts
-new_rounds['num_putts'].fillna(0, inplace=True)
 new_rounds.sort_values(by='date_played', inplace=True, ascending=False)
 
-print(new_rounds[['course_id', 'date_played', 'num_strokes', 'num_putts', 'num_penalties', 'num_gir', 'num_gld', 'num_110', 'avg_drive_distance']].head(10))
 og_strokes.sort_values(by='id_x', inplace=True, ascending=False)
-print(og_strokes[['hole_id', 'club', 'distance', 'distance_start_to_green_center']].head(50))
-print(f"Average putts: {np.mean(new_rounds[['num_putts']])}")
 
-new_rounds[['course_id', 'date_played', 'num_strokes', 'num_putts', 'num_penalties', 'num_gir', 'num_gld', 'num_110', 'avg_drive_distance']].to_csv('exports/2024.csv', index=True)
+new_rounds[['date_played', 'name', 'Score', '# Putts', '# Penalties', 'GIR', 'Green Light Drives', '# Shots 100-200 Yards', '# Shots < 100 Yards', '# Drivers Hit', 'Avg. Driver Distance']].to_csv('exports/2024.csv', index=True)
 # Get # Putts
 
 # Get GIR
