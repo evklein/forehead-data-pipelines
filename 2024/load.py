@@ -5,7 +5,7 @@ import sqlite3
 from utils import geo
 
 # Load data from SQLite
-connection = sqlite3.connect("./data/db.sqlite3")
+connection = sqlite3.connect("./data/10-28.sqlite3")
 og_courses = pd.read_sql_query("SELECT * FROM course_course", connection)
 og_course_tees = pd.read_sql_query("SELECT * FROM course_tee", connection)
 og_course_holes = pd.read_sql_query("SELECT * FROM course_hole", connection)
@@ -83,10 +83,24 @@ shots_between_200_and_100 = og_strokes.where(
     (og_strokes['distance_start_to_green_center'] >= 100.0) & 
     (og_strokes['distance_start_to_green_center'] < 200.0)
 ).groupby('rnd_id').size().reset_index(name='# Shots 100-200 Yards')
+shots_between_300_and_200 = og_strokes.where(
+    (og_strokes['distance_start_to_green_center'] >= 200.0) & 
+    (og_strokes['distance_start_to_green_center'] < 300.0)
+).groupby('rnd_id').size().reset_index(name='# Shots 200-300 Yards')
+shots_between_400_and_300 = og_strokes.where(
+    (og_strokes['distance_start_to_green_center'] >= 300.0) & 
+    (og_strokes['distance_start_to_green_center'] < 400.0)
+).groupby('rnd_id').size().reset_index(name='# Shots 300-400 Yards')
+shots_above_400 = og_strokes.where(og_strokes['distance_start_to_green_center'] >= 400).groupby('rnd_id').size().reset_index(name='# Shots >= 400 Yards')
 
 num_drivers_hit = og_strokes.where(og_strokes['club'] == 'D').groupby('rnd_id').size().reset_index(name='# Drivers Hit')
 drives = og_strokes[og_strokes['club'] == 'D']
+
 avg_drive_distance_per_round = drives.groupby('rnd_id')['distance'].mean().reset_index(name='Avg. Driver Distance')
+std_dev_drive_distance_per_round = drives.groupby('rnd_id')['distance'].std().reset_index(name='Std. Dev. Driver Distance')
+
+
+scr_per_round = og_round_stats.where(og_round_stats['scrambling'] == True).groupby('rnd_id').size().reset_index(name='# Up & Downs')
 
 # Merge this with the og_rounds DataFrame to include round details
 
@@ -110,13 +124,24 @@ new_rounds.drop(columns='rnd_id', inplace=True)  # Drop 'rnd_id' to avoid duplic
 
 new_rounds = pd.merge(new_rounds, shots_between_200_and_100, left_on='id', right_on='rnd_id', how='left')
 new_rounds.drop(columns='rnd_id', inplace=True)  # Drop 'rnd_id' to avoid duplication
+new_rounds = pd.merge(new_rounds, shots_between_300_and_200, left_on='id', right_on='rnd_id', how='left')
+new_rounds.drop(columns='rnd_id', inplace=True)  # Drop 'rnd_id' to avoid duplication
+new_rounds = pd.merge(new_rounds, shots_between_400_and_300, left_on='id', right_on='rnd_id', how='left')
+new_rounds.drop(columns='rnd_id', inplace=True)  # Drop 'rnd_id' to avoid duplication
+new_rounds = pd.merge(new_rounds, shots_above_400, left_on='id', right_on='rnd_id', how='left')
+new_rounds.drop(columns='rnd_id', inplace=True)  # Drop 'rnd_id' to avoid duplication
 
 new_rounds = pd.merge(new_rounds, num_drivers_hit, left_on='id', right_on='rnd_id', how='left')
 new_rounds.drop(columns='rnd_id', inplace=True)  # Drop 'rnd_id' to avoid duplication
 
+new_rounds = pd.merge(new_rounds, scr_per_round, left_on='id', right_on='rnd_id', how='left')
+new_rounds.drop(columns='rnd_id', inplace=True)  # Drop 'rnd_id' to avoid duplication
 
 
 new_rounds = pd.merge(new_rounds, avg_drive_distance_per_round, left_on='id', right_on='rnd_id', how='left')
+new_rounds.drop(columns='rnd_id', inplace=True)  # Drop 'rnd_id' to avoid duplication
+
+new_rounds = pd.merge(new_rounds, std_dev_drive_distance_per_round, left_on='id', right_on='rnd_id', how='left')
 new_rounds.drop(columns='rnd_id', inplace=True)  # Drop 'rnd_id' to avoid duplication
 
 new_rounds = pd.merge(new_rounds, og_courses, left_on='course_id', right_on='id', how='left')
@@ -130,24 +155,7 @@ new_rounds.sort_values(by='date_played', inplace=True, ascending=False)
 
 og_strokes.sort_values(by='id_x', inplace=True, ascending=False)
 
-new_rounds[['date_played', 'name', 'Score', '# Putts', '# Penalties', 'GIR', 'Green Light Drives', '# Shots 100-200 Yards', '# Shots < 100 Yards', '# Drivers Hit', 'Avg. Driver Distance']].to_csv('exports/2024.csv', index=True)
-# Get # Putts
+new_rounds[['date_played', 'name', 'Score', '# Putts', '# Penalties', 'GIR', '# Up & Downs', 'Green Light Drives', '# Shots >= 400 Yards', '# Shots 300-400 Yards', '# Shots 200-300 Yards', '# Shots 100-200 Yards', '# Shots < 100 Yards', '# Drivers Hit', 'Avg. Driver Distance', 'Std. Dev. Driver Distance']].to_csv('exports/2024.csv', index=True)
 
-# Get GIR
 
-# Get GLD
-
-# Get % Scrambling
-
-# Get # penalties
-
-# Get # Shots inside 110 yards
-
-# Avg Driving Distance
-
-# Feet of Putts
-
-# Round Strokes
-# Cum. stroke
-
-# Round putts
+# TODO: , GLD -> %, # 3 putts, # shots 300-400 yards, # shots 400+ yards, round driver distances to 1 decimal place
